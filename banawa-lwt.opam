@@ -16,7 +16,7 @@ build: [
 depends: [
   "ocaml" {>= "4.08.0"}
   "dune" {>= "2.7"}
-  "awa" {= version}
+  "banawa" {= version}
   "cstruct" {>= "6.0.0"}
   "mtime" {>= "1.0.0"}
   "lwt"
