@@ -18,14 +18,15 @@ open Lwt.Infix
 
 let user_db =
   (* User foo auths by passoword *)
-  let foo = Banawa.Auth.make_user "foo" ~password:"bar" [] in
+  let user_db = Banawa.Auth.Db.create 2 in
+  Banawa.Auth.Db.add user_db "foo" (Banawa.Auth.make_credentials ~password:"bar" []);
   (* User awa auths by pubkey *)
   let fd = Unix.(openfile "test/data/awa_test_rsa.pub" [O_RDONLY] 0) in
   let file_buf = Unix_cstruct.of_fd fd in
   let key = Result.get_ok (Banawa.Wire.pubkey_of_openssh file_buf) in
   Unix.close fd;
-  let awa = Banawa.Auth.make_user "awa" [ key ] in
-  [ foo; awa ]
+  Banawa.Auth.Db.add user_db "awa" (Banawa.Auth.make_credentials [ key ]);
+  user_db
 
 let exec addr ?cmd sshin sshout _ssherror =
   let rec echo () =

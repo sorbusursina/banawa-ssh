@@ -145,12 +145,11 @@ let make_disconnect t code s =
 
 let rec input_userauth_request t username service auth_method =
   let open Ssh in
-  let open Auth in
   let inc_nfailed t =
     match t.auth_state with
-    | Preauth | Done -> Error "Unexpected auth_state"
-    | Inprogress (u, s, nfailed) ->
-      Ok ({ t with auth_state = Inprogress (u, s, succ nfailed) })
+    | Auth.Preauth | Auth.Done -> Error "Unexpected auth_state"
+    | Auth.Inprogress (u, s, nfailed) ->
+      Ok ({ t with auth_state = Auth.Inprogress (u, s, succ nfailed) })
   in
   let disconnect t code s =
     let* t = inc_nfailed t in
@@ -162,7 +161,7 @@ let rec input_userauth_request t username service auth_method =
   in
   let discard t = make_noreply t in
   let success t =
-    make_reply { t with auth_state = Done; expect = None } Msg_userauth_success
+    make_reply { t with auth_state = Auth.Done; expect = None } Msg_userauth_success
   in
   let try_probe t pubkey =
     make_reply t (Msg_userauth_pk_ok pubkey)
@@ -176,20 +175,34 @@ let rec input_userauth_request t username service auth_method =
     | Pubkey (pubkey, None) ->        (* Public key probing *)
       try_probe t pubkey
     | Pubkey (pubkey, Some (alg, signed)) -> (* Public key authentication *)
-      try_auth t (by_pubkey username alg pubkey session_id service signed
-                    [make_user username [pubkey]])
+      if Auth.Db.mem t.user_db username then
+        match
+          Option.bind
+            (Auth.Db.find_opt t.user_db username)
+            (fun c -> Auth.lookup_key c pubkey)
+        with
+        | None ->
+          let _ : bool = Auth.by_pubkey username alg pubkey session_id service signed in
+          failure t
+        | Some pubkey ->
+          try_auth t (Auth.by_pubkey username alg pubkey session_id service signed)
+      else
+        let verified = Auth.by_pubkey username alg pubkey session_id service signed in
+        if verified then
+          Auth.Db.add t.user_db username (Auth.make_credentials [ pubkey ]);
+        try_auth t verified
     | Password (password, None) ->    (* Password authentication *)
-      try_auth t (by_password username password t.user_db)
+      try_auth t (Auth.by_password username password t.user_db)
     (* Change of password, or keyboard_interactive, or Authnone won't be supported *)
     | Password (_, Some _) | Keyboard_interactive _ | Authnone -> failure t
   in
   (* See if we can actually authenticate *)
   match t.auth_state with
-  | Done -> discard t (* RFC tells us we must discard requests if already authenticated *)
-  | Preauth -> (* Recurse, but now Inprogress *)
-    let t = { t with auth_state = Inprogress (username, service, 0) } in
+  | Auth.Done -> discard t (* RFC tells us we must discard requests if already authenticated *)
+  | Auth.Preauth -> (* Recurse, but now Inprogress *)
+    let t = { t with auth_state = Auth.Inprogress (username, service, 0) } in
     input_userauth_request t username service auth_method
-  | Inprogress (prev_username, prev_service, nfailed) ->
+  | Auth.Inprogress (prev_username, prev_service, nfailed) ->
     if service <> "ssh-connection" then
       disconnect t DISCONNECT_SERVICE_NOT_AVAILABLE
         (sprintf "Don't know service `%s`" service)
