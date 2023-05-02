@@ -16,7 +16,7 @@
 
 let () = Printexc.record_backtrace true
 
-open Awa
+open Banawa
 
 let read_cstruct fd =
   let len = Ssh.max_pkt_len in

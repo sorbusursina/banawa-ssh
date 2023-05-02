@@ -58,9 +58,9 @@ let wrapr = function
   | Error e -> Lwt.fail_invalid_arg e
 
 let send_msg fd server msg =
-  wrapr (Awa.Server.output_msg server msg)
+  wrapr (Banawa.Server.output_msg server msg)
   >>= fun (server, msg_buf) ->
-  Lwt_io.printf ">>> %s\n%!" (Fmt.to_to_string Awa.Ssh.pp_message msg)
+  Lwt_io.printf ">>> %s\n%!" (Fmt.to_to_string Banawa.Ssh.pp_message msg)
   >>= fun () ->
   Lwt_unix.write fd (Cstruct.to_bytes msg_buf) 0 (Cstruct.length msg_buf)
   >>= fun n ->
@@ -96,7 +96,7 @@ let lookup_channel t id =
   List.find_opt (fun c -> id = c.id) t.channels
 
 let rec nexus t fd server input_buffer =
-  wrapr (Awa.Server.pop_msg2 server input_buffer)
+  wrapr (Banawa.Server.pop_msg2 server input_buffer)
   >>= fun (server, msg, input_buffer) ->
   match msg with
   | None -> (* No SSH msg *)
@@ -109,7 +109,7 @@ let rec nexus t fd server input_buffer =
     >>= fun nexus_msg ->
     (match nexus_msg with
      | Rekey ->
-       (match Awa.Server.maybe_rekey server (Mtime_clock.now ()) with
+       (match Banawa.Server.maybe_rekey server (Mtime_clock.now ()) with
         | None -> nexus t fd server input_buffer
         | Some (server, kexinit) ->
           Lwt_io.printf "Rekeying\n%!" >>= fun () ->
@@ -119,48 +119,48 @@ let rec nexus t fd server input_buffer =
      | Net_eof ->
        Lwt_io.printf "Got Net_eof\n%!" >>= fun () ->
        Lwt.return t
-     | Net_io buf -> nexus t fd server (Awa.Util.cs_join input_buffer buf)
+     | Net_io buf -> nexus t fd server (Banawa.Util.cs_join input_buffer buf)
      | Sshout (id, buf) | Ssherr (id, buf) ->
-       wrapr (Awa.Server.output_channel_data server id buf)
+       wrapr (Banawa.Server.output_channel_data server id buf)
        >>= fun (server, msgs) ->
        send_msgs fd server msgs >>= fun server ->
        nexus t fd server input_buffer)
   | Some msg -> (* SSH msg *)
-    Lwt_io.printf "<<< %s\n%!" (Fmt.to_to_string Awa.Ssh.pp_message msg)
+    Lwt_io.printf "<<< %s\n%!" (Fmt.to_to_string Banawa.Ssh.pp_message msg)
     >>= fun () ->
-    wrapr (Awa.Server.input_msg server msg (Mtime_clock.now ()))
+    wrapr (Banawa.Server.input_msg server msg (Mtime_clock.now ()))
     >>= fun (server, replies, event) ->
     send_msgs fd server replies
     >>= fun server ->
     match event with
     | None -> nexus t fd server input_buffer
-    | Some Awa.Server.Disconnected s ->
+    | Some Banawa.Server.Disconnected s ->
       Lwt_io.printf "Disconnected: %s\n%!" s >>= fun () ->
       Lwt_list.iter_p sshin_eof t.channels
       >>= fun () ->
       Lwt.return t
-    | Some Awa.Server.Channel_eof id ->
+    | Some Banawa.Server.Channel_eof id ->
       (match lookup_channel t id with
        | Some c -> sshin_eof c >>= fun () -> Lwt.return t
        | None -> Lwt.return t)
-    | Some Awa.Server.Channel_data (id, data) ->
+    | Some Banawa.Server.Channel_data (id, data) ->
       (match lookup_channel t id with
        | Some c -> sshin_data c data
        | None -> Lwt.return_unit)
       >>= fun () ->
       nexus t fd server input_buffer
-    | Some Awa.Server.Set_env (k, v) ->
+    | Some Banawa.Server.Set_env (k, v) ->
       ( match t.env with
       | Some set_env -> set_env k v
       | None -> Lwt.return_unit ) >>= fun () -> 
       nexus t fd server input_buffer
-    | Some Awa.Server.Pty (term, w, h, maxw, maxh, _modes) ->
+    | Some Banawa.Server.Pty (term, w, h, maxw, maxh, _modes) ->
       ( match t.window with
       | Some set_window -> set_window ~term ~w ~h ~maxw ~maxh
       | None -> Lwt.return_unit ) >>= fun () ->
       nexus t fd server input_buffer
-    | Some Awa.Server.Channel_subsystem (id, cmd) (* same as exec *)
-    | Some Awa.Server.Channel_exec (id, cmd) ->
+    | Some Banawa.Server.Channel_subsystem (id, cmd) (* same as exec *)
+    | Some Banawa.Server.Channel_exec (id, cmd) ->
       (* Create an input box *)
       let sshin_mbox = Lwt_mvar.create_empty () in
       (* Create a callback for each mbox *)
@@ -172,7 +172,7 @@ let rec nexus t fd server input_buffer =
       let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
       let t = { t with channels = c :: t.channels } in
       nexus t fd server input_buffer
-    | Some (Awa.Server.Start_shell id) ->
+    | Some (Banawa.Server.Start_shell id) ->
       (* Create an input box *)
       let sshin_mbox = Lwt_mvar.create_empty () in
       (* Create a callback for each mbox *)

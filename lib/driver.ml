@@ -17,7 +17,7 @@
 open Util
 
 (*
- * NOTICE: This is a highly experimental Driver for Awa.
+ * NOTICE: This is a highly experimental Driver for Banawá.
  *)
 
 type t = {

@@ -18,13 +18,13 @@ open Lwt.Infix
 
 let user_db =
   (* User foo auths by passoword *)
-  let foo = Awa.Auth.make_user "foo" ~password:"bar" [] in
+  let foo = Banawa.Auth.make_user "foo" ~password:"bar" [] in
   (* User awa auths by pubkey *)
   let fd = Unix.(openfile "test/data/awa_test_rsa.pub" [O_RDONLY] 0) in
   let file_buf = Unix_cstruct.of_fd fd in
-  let key = Result.get_ok (Awa.Wire.pubkey_of_openssh file_buf) in
+  let key = Result.get_ok (Banawa.Wire.pubkey_of_openssh file_buf) in
   Unix.close fd;
-  let awa = Awa.Auth.make_user "awa" [ key ] in
+  let awa = Banawa.Auth.make_user "awa" [ key ] in
   [ foo; awa ]
 
 let exec addr ?cmd sshin sshout _ssherror =
@@ -46,17 +46,17 @@ let exec addr ?cmd sshin sshout _ssherror =
     (match cmd with "echo" -> echo () | "ping" -> ping () | _ -> badcmd cmd)
     >>= fun () ->
     Lwt_io.printf "[%s] execution of `%s` finished\n%!" addr cmd
-    (* XXX Awa_lwt must close the channel when exec returns ! *)
+    (* XXX Banawa_lwt must close the channel when exec returns ! *)
 
 let serve rsa fd addr =
   Lwt_io.printf "[%s] connected\n%!" addr >>= fun () ->
-  let server, msgs = Awa.Server.make rsa user_db in
-  Awa_lwt.spawn_server server msgs fd (exec addr) >>= fun _t ->
+  let server, msgs = Banawa.Server.make rsa user_db in
+  Banawa_lwt.spawn_server server msgs fd (exec addr) >>= fun _t ->
   Lwt_io.printf "[%s] finished\n%!" addr >>= fun () ->
   Lwt_unix.close fd
 
 let rec wait_connection priv_key listen_fd server_port =
-  Lwt_io.printf "Awa server waiting connections on port %d\n%!" server_port
+  Lwt_io.printf "Banawa server waiting connections on port %d\n%!" server_port
   >>= fun () ->
   Lwt_unix.(accept listen_fd) >>= fun (client_fd, saddr) ->
   let client_addr = match saddr with
@@ -71,7 +71,7 @@ let main =
   Mirage_crypto_rng_unix.initialize (module Mirage_crypto_rng.Fortuna);
   let g = Mirage_crypto_rng.(create ~seed:(Cstruct.of_string "180586") (module Fortuna)) in
   let (ec_priv,_) = Mirage_crypto_ec.Ed25519.generate ~g () in
-  let priv_key = Awa.Hostkey.Ed25519_priv (ec_priv) in
+  let priv_key = Banawa.Hostkey.Ed25519_priv (ec_priv) in
   let server_port = 18022 in
   let listen_fd = Lwt_unix.(socket PF_INET SOCK_STREAM 0) in
   Lwt_unix.(setsockopt listen_fd SO_REUSEADDR true);

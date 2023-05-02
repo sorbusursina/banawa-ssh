@@ -16,7 +16,7 @@
 
 open Util
 
-let version_banner = "SSH-2.0-awa_ssh_0.1"
+let version_banner = "SSH-2.0-banawa_ssh_0.1"
 let max_pkt_len = 512 * 1024          (* 512KB should be enough *)
 let max_len = 256 * 1024              (* 256KB for a field is enough *)
 let channel_win_len =                 (* 4MB channel window *)

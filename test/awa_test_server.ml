@@ -16,7 +16,7 @@
 
 let () = Printexc.record_backtrace true
 
-open Awa
+open Banawa
 
 let ( let* ) = Result.bind
 
@@ -119,7 +119,7 @@ let user_db =
   [ foo; awa ]
 
 let rec wait_connection priv_key listen_fd server_port =
-  printf "Awa server waiting connections on port %d\n%!" server_port;
+  printf "Banawa server waiting connections on port %d\n%!" server_port;
   let client_fd, _ = Unix.(accept listen_fd) in
   printf "Client connected !\n%!";
   let server, msgs = Server.make priv_key user_db in
@@ -140,7 +140,7 @@ let () =
   Mirage_crypto_rng_unix.initialize (module Mirage_crypto_rng.Fortuna);
   let g = Mirage_crypto_rng.(create ~seed:(Cstruct.of_string "180586") (module Fortuna)) in
   let (ec_priv,_) = Mirage_crypto_ec.Ed25519.generate ~g () in
-  let priv_key = Awa.Hostkey.Ed25519_priv (ec_priv) in
+  let priv_key = Banawa.Hostkey.Ed25519_priv (ec_priv) in
   let server_port = 18022 in
   let listen_fd = Unix.(socket PF_INET SOCK_STREAM 0) in
   Unix.(setsockopt listen_fd SO_REUSEADDR true);

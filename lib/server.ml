@@ -176,7 +176,8 @@ let rec input_userauth_request t username service auth_method =
     | Pubkey (pubkey, None) ->        (* Public key probing *)
       try_probe t pubkey
     | Pubkey (pubkey, Some (alg, signed)) -> (* Public key authentication *)
-      try_auth t (by_pubkey username alg pubkey session_id service signed t.user_db)
+      try_auth t (by_pubkey username alg pubkey session_id service signed
+                    [make_user username [pubkey]])
     | Password (password, None) ->    (* Password authentication *)
       try_auth t (by_password username password t.user_db)
     (* Change of password, or keyboard_interactive, or Authnone won't be supported *)

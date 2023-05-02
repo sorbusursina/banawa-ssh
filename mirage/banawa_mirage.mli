@@ -22,9 +22,9 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
   (** [client_of_flow ~authenticator ~user key channel_request flow] upgrades the
       existing connection to SSH, mutually authenticates, opens a channel and
       sends the channel request. *)
-  val client_of_flow : ?authenticator:Awa.Keys.authenticator -> user:string ->
-    [ `Pubkey of Awa.Hostkey.priv | `Password of string ] ->
-    Awa.Ssh.channel_request -> FLOW.flow -> (flow, error) result Lwt.t
+  val client_of_flow : ?authenticator:Banawa.Keys.authenticator -> user:string ->
+    [ `Pubkey of Banawa.Hostkey.priv | `Password of string ] ->
+    Banawa.Ssh.channel_request -> FLOW.flow -> (flow, error) result Lwt.t
 
   type t
 
@@ -42,13 +42,13 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
 
   type exec_callback = request -> unit Lwt.t
 
-  val spawn_server : ?stop:Lwt_switch.t -> Awa.Server.t -> Awa.Ssh.message list -> F.flow ->
+  val spawn_server : ?stop:Lwt_switch.t -> Banawa.Server.t -> Banawa.Ssh.message list -> F.flow ->
     exec_callback -> t Lwt.t
   (** [spawn_server ?stop server msgs flow callback] launches an {i internal}
       SSH channels handler which can be stopped by [stop]. This SSH channels
       handler will call [callback] for every new channels requested by the
-      client. [msgs] are the SSH {i hello} given by {!val:Awa.Server.make} which
-      returns also a {!type:Awa.Server.t} required here.
+      client. [msgs] are the SSH {i hello} given by {!val:Banawa.Server.make} which
+      returns also a {!type:Banawa.Server.t} required here.
 
       A basic usage of [spawn_server] is:
       {[
@@ -56,7 +56,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
           Lwt.return_unit
 
         let tcp_handler flow =
-          let server, msgs = Awa.Server.make private_key db in
+          let server, msgs = Banawa.Server.make private_key db in
           SSH.spawn_server server msgs flow ssh_handler >>= fun _t ->
           close flow
       ]}

@@ -188,7 +188,7 @@ let pubkey_of_openssh buf =
 
 let openssh_of_pubkey key =
   let key_buf = blob_of_pubkey key |> Cstruct.to_string |> Base64.encode_string in
-  String.concat "" [ Hostkey.sshname key ; " "; key_buf; " awa-ssh\n" ]
+  String.concat "" [ Hostkey.sshname key ; " "; key_buf; " banawa-ssh\n" ]
   |> Cstruct.of_string
 
 let privkey_of_pem buf =

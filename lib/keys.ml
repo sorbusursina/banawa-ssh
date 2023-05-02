@@ -1,6 +1,6 @@
 open Util
 
-let src = Logs.Src.create "awa.authenticator" ~doc:"AWA authenticator"
+let src = Logs.Src.create "banawa.authenticator" ~doc:"Banawá authenticator"
 module Log = (val Logs.src_log src : Logs.LOG)
 
 type typ = [ `Rsa | `Ed25519 ]

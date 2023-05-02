@@ -1,4 +1,4 @@
 (library
- (name awa_lwt)
- (public_name awa-lwt)
- (libraries awa cstruct lwt lwt.unix mtime.clock.os))
+ (name banawa_lwt)
+ (public_name banawa-lwt)
+ (libraries banawa cstruct lwt lwt.unix mtime.clock.os))

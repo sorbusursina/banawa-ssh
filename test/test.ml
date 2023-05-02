@@ -16,7 +16,7 @@
 
 let () = Printexc.record_backtrace true
 
-open Awa
+open Banawa
 open Printf
 open Util
 

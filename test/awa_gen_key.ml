@@ -6,19 +6,19 @@ let gen_key seed typ =
     | None -> b64s (Mirage_crypto_rng.generate 30)
     | Some x -> x
   in
-  let hostkey = Awa.Keys.of_seed typ seed in
+  let hostkey = Banawa.Keys.of_seed typ seed in
   (match hostkey with
-   | Awa.Hostkey.Ed25519_priv k ->
+   | Banawa.Hostkey.Ed25519_priv k ->
      let p = Mirage_crypto_ec.Ed25519.priv_to_cstruct k in
      Printf.printf "private key: %s:%s\n"
-       Awa.Keys.(string_of_typ `Ed25519)
+       Banawa.Keys.(string_of_typ `Ed25519)
        (b64s p)
    | Rsa_priv _ ->
      Printf.printf "private key seed: %s:%s\n"
-       Awa.Keys.(string_of_typ `Rsa) seed);
-  let pub = Awa.Hostkey.pub_of_priv hostkey in
-  let public = Awa.Wire.blob_of_pubkey pub in
-  Printf.printf "%s %s awa@awa.local\n" (Awa.Hostkey.sshname pub) (b64s public);
+       Banawa.Keys.(string_of_typ `Rsa) seed);
+  let pub = Banawa.Hostkey.pub_of_priv hostkey in
+  let public = Banawa.Wire.blob_of_pubkey pub in
+  Printf.printf "%s %s awa@awa.local\n" (Banawa.Hostkey.sshname pub) (b64s public);
   Ok ()
 
 open Cmdliner
