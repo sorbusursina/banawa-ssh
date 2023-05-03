@@ -35,7 +35,7 @@ let make_credentials keys =
   keys
 
 let lookup_key credentials key =
-  List.find_opt (fun key' -> key = key' ) credentials
+  List.find_opt (fun key' -> Hostkey.pub_eq key key' ) credentials
 
 let to_hash name alg pubkey session_id service =
   let open Wire in
