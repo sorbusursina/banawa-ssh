@@ -157,7 +157,7 @@ let rec input_userauth_request t username service auth_method =
   in
   let failure t =
     let* t = inc_nfailed t in
-    make_reply t (Msg_userauth_failure ([ "publickey"; "password" ], false))
+    make_reply t (Msg_userauth_failure ([ "publickey" ], false))
   in
   let discard t = make_noreply t in
   let success t =
@@ -182,6 +182,7 @@ let rec input_userauth_request t username service auth_method =
             (fun c -> Auth.lookup_key c pubkey)
         with
         | None ->
+          (* verify the key regardless to prevent user enumeration *)
           let _ : bool = Auth.by_pubkey username alg pubkey session_id service signed in
           failure t
         | Some pubkey ->
@@ -191,10 +192,8 @@ let rec input_userauth_request t username service auth_method =
         if verified then
           Auth.Db.add t.user_db username (Auth.make_credentials [ pubkey ]);
         try_auth t verified
-    | Password (password, None) ->    (* Password authentication *)
-      try_auth t (Auth.by_password username password t.user_db)
-    (* Change of password, or keyboard_interactive, or Authnone won't be supported *)
-    | Password (_, Some _) | Keyboard_interactive _ | Authnone -> failure t
+    (* Password, change of password, or keyboard_interactive, or Authnone won't be supported *)
+    | Password _ | Keyboard_interactive _ | Authnone -> failure t
   in
   (* See if we can actually authenticate *)
   match t.auth_state with

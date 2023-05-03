@@ -17,9 +17,7 @@
 open Lwt.Infix
 
 let user_db =
-  (* User foo auths by passoword *)
   let user_db = Banawa.Auth.Db.create 2 in
-  Banawa.Auth.Db.add user_db "foo" (Banawa.Auth.make_credentials ~password:"bar" []);
   (* User awa auths by pubkey *)
   let fd = Unix.(openfile "test/data/awa_test_rsa.pub" [O_RDONLY] 0) in
   let file_buf = Unix_cstruct.of_fd fd in

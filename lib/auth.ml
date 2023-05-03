@@ -14,10 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-type credentials = {
-  password : string option;
-  keys : Hostkey.pub list;
-}
+type credentials = Hostkey.pub list
 
 module Db = Hashtbl.Make(struct type t = string let equal = String.equal let hash = Hashtbl.hash end)
 
@@ -32,25 +29,13 @@ let username_of_auth_state = function
   | Preauth | Inprogress _ -> None
   | Done { username; _ } -> Some username
 
-let make_credentials ?password keys =
-  if password = None && keys = [] then
-    invalid_arg "password must be Some, and/or keys must not be empty";
-  { password; keys }
+let make_credentials keys =
+  if keys = [] then
+    invalid_arg "keys must not be empty";
+  keys
 
 let lookup_key credentials key =
-  List.find_opt (fun key' -> key = key' ) credentials.keys
-
-let by_password name password db =
-  match
-    Option.bind
-      (Db.find_opt db name)
-      (fun c -> c.password)
-  with
-  | Some password' ->
-    let a = Mirage_crypto.Hash.digest `SHA256 (Cstruct.of_string password')
-    and b = Mirage_crypto.Hash.digest `SHA256 (Cstruct.of_string password) in
-    Eqaf_cstruct.equal a b
-  | None -> false
+  List.find_opt (fun key' -> key = key' ) credentials
 
 let to_hash name alg pubkey session_id service =
   let open Wire in
