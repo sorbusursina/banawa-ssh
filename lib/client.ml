@@ -157,7 +157,7 @@ let make ?(authenticator = `No_authentication) ~user auth_method =
   output_msgs t [ banner_msg ; kex_msg ]
 
 let handle_kexinit t c_v ckex s_v skex =
-  let* neg = Kex.negotiate ~them:skex ~us:ckex in
+  let* neg = Kex.negotiate ~s:skex ~c:ckex in
   Log.info (fun m -> m "negotiated: %a" Kex.pp_negotiation neg);
   (* two cases: directly send the kexdh_init, or RFC 4419 and negotiate group *)
   let state, msg =
