@@ -147,7 +147,7 @@ let rec input_userauth_request t username service auth_method =
   let open Ssh in
   let inc_nfailed t =
     match t.auth_state with
-    | Auth.Preauth | Auth.Done -> Error "Unexpected auth_state"
+    | Auth.Preauth | Auth.Done _ -> Error "Unexpected auth_state"
     | Auth.Inprogress (u, s, nfailed) ->
       Ok ({ t with auth_state = Auth.Inprogress (u, s, succ nfailed) })
   in
@@ -161,7 +161,7 @@ let rec input_userauth_request t username service auth_method =
   in
   let discard t = make_noreply t in
   let success t =
-    make_reply { t with auth_state = Auth.Done; expect = None } Msg_userauth_success
+    make_reply { t with auth_state = Auth.Done { username; service }; expect = None } Msg_userauth_success
   in
   let try_probe t pubkey =
     make_reply t (Msg_userauth_pk_ok pubkey)
@@ -198,7 +198,7 @@ let rec input_userauth_request t username service auth_method =
   in
   (* See if we can actually authenticate *)
   match t.auth_state with
-  | Auth.Done -> discard t (* RFC tells us we must discard requests if already authenticated *)
+  | Auth.Done _ -> discard t (* RFC tells us we must discard requests if already authenticated *)
   | Auth.Preauth -> (* Recurse, but now Inprogress *)
     let t = { t with auth_state = Auth.Inprogress (username, service, 0) } in
     input_userauth_request t username service auth_method

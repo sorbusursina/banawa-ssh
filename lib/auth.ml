@@ -26,7 +26,11 @@ type db = credentials Db.t
 type state =
   | Preauth
   | Inprogress of (string * string * int)
-  | Done
+  | Done of { username : string; service : string }
+
+let username_of_auth_state = function
+  | Preauth | Inprogress _ -> None
+  | Done { username; _ } -> Some username
 
 let make_credentials ?password keys =
   if password = None && keys = [] then

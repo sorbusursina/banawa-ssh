@@ -180,7 +180,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
                  ; oc : Cstruct.t -> unit Lwt.t
                  ; ec : Cstruct.t -> unit Lwt.t }
 
-  type exec_callback = request -> unit Lwt.t
+  type exec_callback = username:string -> request -> unit Lwt.t
 
   type t = {
     exec_callback  : exec_callback;       (* callback to run on exec *)
@@ -288,10 +288,12 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
       match event with
       | None -> nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
       | Some Banawa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
-        t.exec_callback (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
+        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+        t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
       | Some Banawa.Server.Set_env (key, value) ->
-        t.exec_callback (Set_env { key; value; }) >>= fun () ->
+        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+        t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
       | Some Banawa.Server.Disconnected _ ->
         Lwt_list.iter_p sshin_eof t.channels
@@ -314,8 +316,9 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
+        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
         (* Create the execution thread *)
-        let exec_thread = t.exec_callback (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
+        let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
@@ -325,8 +328,9 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
+        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
         (* Create the execution thread *)
-        let exec_thread = t.exec_callback (Shell { ic; oc= oc id; ec= ec id; }) in
+        let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= None; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])

@@ -40,7 +40,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
                  ; oc : Cstruct.t -> unit Lwt.t
                  ; ec : Cstruct.t -> unit Lwt.t }
 
-  type exec_callback = request -> unit Lwt.t
+  type exec_callback = username:string -> request -> unit Lwt.t
 
   val spawn_server : ?stop:Lwt_switch.t -> Banawa.Server.t -> Banawa.Ssh.message list -> F.flow ->
     exec_callback -> t Lwt.t
