@@ -299,7 +299,7 @@ let input_msg t msg now =
   let* () = guard_msg t msg in
   match msg with
   | Msg_kexinit kex ->
-    let* neg = Kex.negotiate ~s:t.server_kexinit ~c:kex in
+    let* neg = Kex.negotiate ~us:t.server_kexinit ~them:kex in
     let ignore_next_packet =
       kex.first_kex_packet_follows &&
       not (Kex.guessed_right ~s:t.server_kexinit ~c:kex)

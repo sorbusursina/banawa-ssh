@@ -173,39 +173,39 @@ let guessed_right ~s ~c =
 
 (* negotiate / pick_common should prefer _ours_ over _theirs_ (well, the
    client decides ultimately (by sending the next message), no?) *)
-let negotiate ~s ~c =
-  let pick_common f ~s ~c e =
+let negotiate ~us ~them =
+  let pick_common f ~us ~them e =
     try
-      f (List.find (fun x -> List.mem x s) c)
+      f (List.find (fun x -> List.mem x them) us)
     with
       Not_found -> Error e
   in
   let* kex_alg =
     pick_common
       alg_of_string
-      ~s:s.kex_algs
-      ~c:c.kex_algs
+      ~us:us.kex_algs
+      ~them:them.kex_algs
       "Can't agree on kex algorithm"
   in
   let* server_host_key_alg =
     pick_common
       Hostkey.alg_of_string
-      ~s:s.server_host_key_algs
-      ~c:c.server_host_key_algs
+      ~us:us.server_host_key_algs
+      ~them:them.server_host_key_algs
       "Can't agree on server host key algorithm"
   in
   let* encryption_alg_ctos =
     pick_common
       Cipher.of_string
-      ~s:s.encryption_algs_ctos
-      ~c:c.encryption_algs_ctos
+      ~us:us.encryption_algs_ctos
+      ~them:them.encryption_algs_ctos
       "Can't agree on encryption algorithm client to server"
   in
   let* encryption_alg_stoc =
     pick_common
       Cipher.of_string
-      ~s:s.encryption_algs_stoc
-      ~c:c.encryption_algs_stoc
+      ~us:us.encryption_algs_stoc
+      ~them:them.encryption_algs_stoc
       "Can't agree on encryption algorithm server to client"
   in
   let* mac_alg_ctos =
@@ -214,8 +214,8 @@ let negotiate ~s ~c =
     else
       pick_common
         Hmac.of_string
-        ~s:s.mac_algs_ctos
-        ~c:c.mac_algs_ctos
+        ~us:us.mac_algs_ctos
+        ~them:them.mac_algs_ctos
         "Can't agree on mac algorithm client to server"
   in
   let* mac_alg_stoc =
@@ -224,22 +224,22 @@ let negotiate ~s ~c =
     else
       pick_common
         Hmac.of_string
-        ~s:s.mac_algs_stoc
-        ~c:c.mac_algs_stoc
+        ~us:us.mac_algs_stoc
+        ~them:them.mac_algs_stoc
         "Can't agree on mac algorithm server to client"
   in
   let* compression_alg_ctos =
     pick_common
       compression_alg_of_string
-      ~s:s.compression_algs_ctos
-      ~c:c.compression_algs_ctos
+      ~us:us.compression_algs_ctos
+      ~them:them.compression_algs_ctos
       "Can't agree on compression algorithm client to server"
   in
   let* compression_alg_stoc =
     pick_common
       compression_alg_of_string
-      ~s:s.compression_algs_stoc
-      ~c:c.compression_algs_stoc
+      ~us:us.compression_algs_stoc
+      ~them:them.compression_algs_stoc
       "Can't agree on compression algorithm server to client"
   in
   (* XXX make sure it's not plaintext here *)
