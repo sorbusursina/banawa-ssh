@@ -1,4 +1,4 @@
 (lang dune 2.7)
-(name awa)
+(name banawa)
 (cram enable)
 (formatting disabled)
