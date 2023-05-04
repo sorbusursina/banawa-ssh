@@ -291,6 +291,10 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
         t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
+      | Some Banawa.Server.Pty_set (width, height, max_width, max_height) ->
+        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+        t.exec_callback ~username (Pty_set { width; height; max_width; max_height }) >>= fun () ->
+        nexus t fd server input_buffer pending_promises
       | Some Banawa.Server.Set_env (key, value) ->
         let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
         t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->

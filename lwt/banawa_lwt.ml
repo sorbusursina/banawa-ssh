@@ -159,6 +159,8 @@ let rec nexus t fd server input_buffer =
       | Some set_window -> set_window ~term ~w ~h ~maxw ~maxh
       | None -> Lwt.return_unit ) >>= fun () ->
       nexus t fd server input_buffer
+    | Some Banawa.Server.Pty_set (_w, _h, _maxw, _maxh) ->
+      assert false
     | Some Banawa.Server.Channel_subsystem (id, cmd) (* same as exec *)
     | Some Banawa.Server.Channel_exec (id, cmd) ->
       (* Create an input box *)
