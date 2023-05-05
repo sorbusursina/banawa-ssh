@@ -176,17 +176,8 @@ let rec input_userauth_request t username service auth_method =
     let* () = guard (service = "ssh-connection") "Bad service" in
     match auth_method with
     | Pubkey (pubkey, None) ->        (* Public key probing *)
-      Logs.warn (fun m -> m "Public key probing: %s"
-                    (match pubkey with
-                     | Hostkey.Rsa_pub _ -> "rsa"
-                     | Hostkey.Ed25519_pub _ -> "ed25519"));
       try_probe t pubkey
     | Pubkey (pubkey, Some (alg, signed)) -> (* Public key authentication *)
-      Logs.warn (fun m -> m "Public key authentication: %s using %s"
-                    (match pubkey with
-                     | Hostkey.Rsa_pub _ -> "rsa"
-                     | Hostkey.Ed25519_pub _ -> "ed25519")
-                    (Hostkey.alg_to_string alg));
       if Auth.Db.mem t.user_db username then
         match
           Option.bind
