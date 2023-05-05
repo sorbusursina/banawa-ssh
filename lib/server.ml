@@ -33,6 +33,7 @@ type t = {
   client_kexinit : Ssh.kexinit option;    (* Last KEXINIT received *)
   server_kexinit : Ssh.kexinit;           (* Last KEXINIT sent by us *)
   neg_kex        : Kex.negotiation option;(* Negotiated KEX *)
+  ext_info       : bool;                  (* The other end wants ext_info *)
   host_key       : Hostkey.priv;          (* Server host key *)
   session_id     : Cstruct.t option;      (* First calculated H *)
   keys_ctos      : Kex.keys;              (* Client to server (input) keys *)
@@ -71,6 +72,7 @@ let make host_key user_db =
     server_kexinit;
     client_kexinit = None;
     neg_kex = None;
+    ext_info = false;
     host_key;
     session_id = None;
     keys_ctos = Kex.make_plaintext ();
@@ -174,8 +176,17 @@ let rec input_userauth_request t username service auth_method =
     let* () = guard (service = "ssh-connection") "Bad service" in
     match auth_method with
     | Pubkey (pubkey, None) ->        (* Public key probing *)
+      Logs.warn (fun m -> m "Public key probing: %s"
+                    (match pubkey with
+                     | Hostkey.Rsa_pub _ -> "rsa"
+                     | Hostkey.Ed25519_pub _ -> "ed25519"));
       try_probe t pubkey
     | Pubkey (pubkey, Some (alg, signed)) -> (* Public key authentication *)
+      Logs.warn (fun m -> m "Public key authentication: %s using %s"
+                    (match pubkey with
+                     | Hostkey.Rsa_pub _ -> "rsa"
+                     | Hostkey.Ed25519_pub _ -> "ed25519")
+                    (Hostkey.alg_to_string alg));
       if Auth.Db.mem t.user_db username then
         match
           Option.bind
@@ -308,7 +319,8 @@ let input_msg t msg now =
     let t = { t with client_kexinit = Some kex;
                      neg_kex = Some neg;
                      expect = Some MSG_KEX_0; (* TODO needs fix *)
-                     ignore_next_packet }
+                     ignore_next_packet;
+                     ext_info = kex.ext_info = Some `Ext_info_c; }
     in
     (match rekey t with
      | None -> make_noreply t   (* either already rekeying or not keyed *)
@@ -344,7 +356,18 @@ let input_msg t msg now =
                               new_keys_stoc = Some new_keys_stoc;
                               key_eol = Some key_eol;
                               expect = Some MSG_NEWKEYS }
-          [ Msg_kexdh_reply (pub_host_key, f, signature); Msg_newkeys ]
+          ([ Msg_kexdh_reply (pub_host_key, f, signature); Msg_newkeys ] @ (
+              if t.ext_info then
+                let preferred_algs =
+                  String.concat ","
+                    (List.map Hostkey.alg_to_string Hostkey.preferred_algs);
+                in
+                let extensions =
+                  [Extension { name = "server-sig-algs";
+                               value = preferred_algs; }]
+                in
+                [ Msg_ext_info extensions ]
+              else []))
       | _ ->
         Error "unexpected KEX message"
     end
