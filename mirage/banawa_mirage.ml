@@ -190,7 +190,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
 
   let wrapr = function
     | Ok x -> Lwt.return x
-    | Error e -> Lwt.fail_invalid_arg e
+    | Error e -> invalid_arg e
 
   let send_msg flow server msg =
     wrapr (Banawa.Server.output_msg server msg)
