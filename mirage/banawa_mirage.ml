@@ -235,17 +235,13 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     >>= fun (server, msg, input_buffer) ->
     match msg with
     | None -> (* No SSH msg *)
-      Lwt.catch
-        (fun () ->
-          let timeout = T.sleep_ns (Duration.of_sec 2) >>= fun () -> Lwt.return Rekey in
-          (* We will listen from two incomming messages sources, from the net interface with
-           * 'net_read', and from the ssh server with 'Lwt_mvar.take'. To let the promises
-           * to be resolved, we use Lwt.choose to not add another of these until we know
-           * that it was fulfiled.
-           *)
-          Lwt.nchoose_split (List.append pending_promises [ timeout ])
-        )
-      (function exn -> Lwt.fail exn)
+      let timeout = T.sleep_ns (Duration.of_sec 2) >>= fun () -> Lwt.return Rekey in
+      (* We will listen from two incomming messages sources, from the net interface with
+       * 'net_read', and from the ssh server with 'Lwt_mvar.take'. To let the promises
+       * to be resolved, we use Lwt.choose to not add another of these until we know
+       * that it was fulfiled.
+      *)
+      Lwt.nchoose_split (List.append pending_promises [ timeout ])
       >>= fun (nexus_msg_fulfiled, pending_promises) ->
       (* We need to keep track of the "not fulfiled" promises and only Lwt.nchoose_split
        * allows us to have this information. This function also gives us a list of
