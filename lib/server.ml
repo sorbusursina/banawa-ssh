@@ -175,26 +175,46 @@ let rec input_userauth_request t username service auth_method =
     let* session_id = guard_some t.session_id "No session_id" in
     let* () = guard (service = "ssh-connection") "Bad service" in
     match auth_method with
-    | Pubkey (pubkey, None) ->        (* Public key probing *)
-      try_probe t pubkey
-    | Pubkey (pubkey, Some (alg, signed)) -> (* Public key authentication *)
-      if Auth.Db.mem t.user_db username then
-        match
-          Option.bind
-            (Auth.Db.find_opt t.user_db username)
-            (fun c -> Auth.lookup_key c pubkey)
-        with
-        | None ->
-          (* verify the key regardless to prevent user enumeration *)
-          let _ : bool = Auth.by_pubkey username alg pubkey session_id service signed in
+    | Pubkey (_sig_alg_raw, pubkey_raw, None) -> (* Public key probing *)
+      begin match Wire.pubkey_of_blob pubkey_raw with
+        | Ok pubkey ->
+          (* TODO: match sig_alg and pubkey type *)
+          try_probe t pubkey
+        | Error `Unsupported keytype ->
+          Logs.debug (fun m -> m "Client offered unsupported key type %s" keytype);
           failure t
-        | Some pubkey ->
-          try_auth t (Auth.by_pubkey username alg pubkey session_id service signed)
-      else
-        let verified = Auth.by_pubkey username alg pubkey session_id service signed in
-        if verified then
-          Auth.Db.add t.user_db username (Auth.make_credentials [ pubkey ]);
-        try_auth t verified
+        | Error `Msg s ->
+          Logs.warn (fun m -> m "Failed to decode public key (while client offered a key): %s" s);
+          disconnect t DISCONNECT_PROTOCOL_ERROR "public key decoding failed"
+      end
+    | Pubkey (_sig_alg_raw, pubkey_raw, Some (sig_alg, signed)) -> (* Public key authentication *)
+      begin match Wire.pubkey_of_blob pubkey_raw with
+        | Ok pubkey ->
+          (* TODO: match sig_alg and pubkey type *)
+          if Auth.Db.mem t.user_db username then
+            match
+              Option.bind
+                (Auth.Db.find_opt t.user_db username)
+                (fun c -> Auth.lookup_key c pubkey)
+            with
+            | None ->
+              (* verify the key regardless to prevent user enumeration *)
+              let _ : bool = Auth.by_pubkey username sig_alg pubkey session_id service signed in
+              failure t
+            | Some pubkey ->
+              try_auth t (Auth.by_pubkey username sig_alg pubkey session_id service signed)
+          else
+            let verified = Auth.by_pubkey username sig_alg pubkey session_id service signed in
+            if verified then
+              Auth.Db.add t.user_db username (Auth.make_credentials [ pubkey ]);
+            try_auth t verified
+        | Error `Unsupported keytype ->
+          Logs.debug (fun m -> m "Client attempted authentication with unsupported keytype %s" keytype);
+          failure t
+        | Error `Msg s ->
+          Logs.warn (fun m -> m "Failed to decode public key (while authenticating): %s" s);
+          disconnect t DISCONNECT_PROTOCOL_ERROR "public key decoding failed"
+      end
     (* Password, change of password, or keyboard_interactive, or Authnone won't be supported *)
     | Password _ | Keyboard_interactive _ | Authnone -> failure t
   in
