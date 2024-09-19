@@ -29,5 +29,5 @@ depends: [
 synopsis: "SSH implementation in OCaml"
 description: """The OpenSSH protocol implemented in OCaml."""
 pin-depends: [
-  ["awa" "git+https://github.com/mirage/awa-ssh.git"]
+  ["awa" "git+https://github.com/mirage/awa-ssh.git#banawa"]
 ]
