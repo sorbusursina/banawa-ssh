@@ -290,6 +290,14 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
       >>= fun (server, replies, event) ->
       send_msgs fd server replies
       >>= fun server ->
+      let with_username f =
+        match authenticated_as with
+        | None ->
+          Log.debug (fun m -> m "Received unexpected event while unauthenticated. \
+                                 Not sure this can happen!");
+          Lwt.return_unit
+        | Some username -> f ~username
+      in
       match event with
       | None -> nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Userauth (_, (Password _ as userauth)) ->
@@ -317,16 +325,15 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         send_msg fd server reply >>= fun server ->
         nexus t fd server (Some user) input_buffer pending_promises
       | Some Awa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
-        let username = Option.get authenticated_as in
-        t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
+        with_username
+          (t.exec_callback (Pty_req { width; height; max_width; max_height; term; })) >>= fun () ->
         nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Pty_set (width, height, max_width, max_height) ->
-        let username = Option.get authenticated_as in
-        t.exec_callback ~username (Pty_set { width; height; max_width; max_height }) >>= fun () ->
+        with_username
+          (t.exec_callback (Pty_set { width; height; max_width; max_height })) >>= fun () ->
         nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Set_env (key, value) ->
-        let username = Option.get authenticated_as in
-        t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->
+        with_username (t.exec_callback (Set_env { key; value; })) >>= fun () ->
         nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Disconnected _ ->
         Lwt_list.iter_p sshin_eof t.channels
@@ -343,30 +350,42 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Channel_subsystem (id, cmd) (* same as exec *)
       | Some Awa.Server.Channel_exec (id, cmd) ->
-        (* Create an input box *)
-        let sshin_mbox = Lwt_mvar.create_empty () in
-        (* Create a callback for each mbox *)
-        let ic () = Lwt_mvar.take sshin_mbox in
-        let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
-        let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get authenticated_as in
-        (* Create the execution thread *)
-        let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
-        let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
-        let t = { t with channels = c :: t.channels } in
-        nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
+        begin match authenticated_as with
+          | None ->
+            Log.debug (fun m -> m "Received unexpected event while unauthenticated. \
+                                   Not sure this can happen!");
+            nexus t fd server authenticated_as input_buffer pending_promises
+          | Some username ->
+             (* Create an input box *)
+             let sshin_mbox = Lwt_mvar.create_empty () in
+             (* Create a callback for each mbox *)
+             let ic () = Lwt_mvar.take sshin_mbox in
+             let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
+             let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
+             (* Create the execution thread *)
+             let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
+             let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
+             let t = { t with channels = c :: t.channels } in
+             nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
+        end
       | Some (Awa.Server.Start_shell id) ->
-        let sshin_mbox = Lwt_mvar.create_empty () in
-        (* Create a callback for each mbox *)
-        let ic () = Lwt_mvar.take sshin_mbox in
-        let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
-        let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get authenticated_as in
-        (* Create the execution thread *)
-        let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
-        let c = { cmd= None; id; sshin_mbox; exec_thread } in
-        let t = { t with channels = c :: t.channels } in
-        nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
+        begin match authenticated_as with
+          | None ->
+            Log.debug (fun m -> m "Received unexpected event while unauthenticated. \
+                                   Not sure this can happen!");
+            nexus t fd server authenticated_as input_buffer pending_promises
+          | Some username ->
+            let sshin_mbox = Lwt_mvar.create_empty () in
+            (* Create a callback for each mbox *)
+            let ic () = Lwt_mvar.take sshin_mbox in
+            let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
+            let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
+            (* Create the execution thread *)
+            let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
+            let c = { cmd= None; id; sshin_mbox; exec_thread } in
+            let t = { t with channels = c :: t.channels } in
+            nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
+        end
 
   let spawn_server ?stop server msgs fd exec_callback =
     let t = { exec_callback;
