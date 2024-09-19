@@ -115,6 +115,10 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     FLOW.close t.flow >|= fun () ->
     t.state <- `Eof
 
+  let shutdown t _ =
+    (* TODO *)
+    close t
+
   let writev t bufs =
     let open Lwt_result.Infix in
     match t.state with
@@ -186,6 +190,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     exec_callback  : exec_callback;       (* callback to run on exec *)
     channels       : channel list;        (* Opened channels *)
     nexus_mbox     : nexus_msg Lwt_mvar.t;(* Nexus mailbox *)
+    user_db : (string, Awa.Hostkey.pub) Hashtbl.t;
   }
 
   let wrapr = function
@@ -236,7 +241,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     | Some mtime ->
       [ T.sleep_ns (Mtime.to_uint64_ns mtime) >>= fun () -> Lwt.return Rekey ]
 
-  let rec nexus t fd server input_buffer pending_promises =
+  let rec nexus t fd server authenticated_as input_buffer pending_promises =
     wrapr (Awa.Server.pop_msg2 server input_buffer)
     >>= fun (server, msg, input_buffer) ->
     match msg with
@@ -254,7 +259,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
        *)
       let rec loop t fd server input_buffer fulfiled_promises pending_promises =
         match fulfiled_promises with
-        | [] -> nexus t fd server input_buffer pending_promises
+        | [] -> nexus t fd server authenticated_as input_buffer pending_promises
         (* Here we have the timeout fulfiled, we can let the net_read + Lwt_mvar.take continue *)
         | Rekey :: remaining_fulfiled_promises ->
           (match Awa.Server.maybe_rekey server (now ()) with
@@ -286,19 +291,43 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
       send_msgs fd server replies
       >>= fun server ->
       match event with
-      | None -> nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+      | None -> nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+      | Some Awa.Server.Userauth (_, (Password _ as userauth)) ->
+        let (server, reply) = Result.get_ok (Awa.Server.reject_userauth server userauth) in
+        send_msg fd server reply >>= fun server ->
+        nexus t fd server authenticated_as input_buffer pending_promises
+      | Some Awa.Server.Userauth (user, (Pubkey pubkeyauth as userauth)) ->
+        let pubkey = Awa.Server.pubkey_of_pubkeyauth pubkeyauth in
+        let accept =
+          Awa.Server.verify_pubkeyauth ~user pubkeyauth &&
+          match Hashtbl.find_opt t.user_db user with
+          | None ->
+            Hashtbl.add t.user_db user (Awa.Server.pubkey_of_pubkeyauth pubkeyauth);
+            true
+          | Some pubkey' ->
+            Awa.Hostkey.pub_eq pubkey pubkey'
+        in
+        let server, reply =
+          Result.get_ok
+            (if accept then
+               Awa.Server.accept_userauth server userauth
+             else
+               Awa.Server.reject_userauth server userauth)
+        in
+        send_msg fd server reply >>= fun server ->
+        nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
-        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
+        let username = Option.get authenticated_as in
         t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
-        nexus t fd server input_buffer pending_promises
+        nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Pty_set (width, height, max_width, max_height) ->
-        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
+        let username = Option.get authenticated_as in
         t.exec_callback ~username (Pty_set { width; height; max_width; max_height }) >>= fun () ->
-        nexus t fd server input_buffer pending_promises
+        nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Set_env (key, value) ->
-        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
+        let username = Option.get authenticated_as in
         t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->
-        nexus t fd server input_buffer pending_promises
+        nexus t fd server authenticated_as input_buffer pending_promises
       | Some Awa.Server.Disconnected _ ->
         Lwt_list.iter_p sshin_eof t.channels
         >>= fun () -> Lwt.return t
@@ -311,7 +340,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
          | Some c -> sshin_data c data
          | None -> Lwt.return_unit)
         >>= fun () ->
-        nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Channel_subsystem (id, cmd) (* same as exec *)
       | Some Awa.Server.Channel_exec (id, cmd) ->
         (* Create an input box *)
@@ -320,29 +349,30 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
+        let username = Option.get authenticated_as in
         (* Create the execution thread *)
         let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
-        nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
       | Some (Awa.Server.Start_shell id) ->
         let sshin_mbox = Lwt_mvar.create_empty () in
         (* Create a callback for each mbox *)
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
+        let username = Option.get authenticated_as in
         (* Create the execution thread *)
         let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= None; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
-        nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
 
   let spawn_server ?stop server msgs fd exec_callback =
     let t = { exec_callback;
               channels = [];
-              nexus_mbox = Lwt_mvar.create_empty ()
+              nexus_mbox = Lwt_mvar.create_empty ();
+              user_db = Hashtbl.create 7;
             }
     in
     let open Lwt.Syntax in
@@ -355,6 +385,6 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     (* the ssh communication will start with 'net_read' and can only add a 'Lwt.take' promise when
      * one Awa.Server.Channel_{exec,subsystem} is received
      *)
-    nexus t fd server (Cstruct.create 0) ([ switched_off; net_read fd ] @ rekey_promise server)
+    nexus t fd server None (Cstruct.create 0) ([ switched_off; net_read fd ] @ rekey_promise server)
 
 end
