@@ -273,14 +273,14 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         | Net_eof :: _ -> Lwt.return t
         (* Here we have the net_read fulfiled, we can let the timeout + Lwt_mvar.take continue and add a new net_read *)
         | Net_io buf :: remaining_fulfiled_promises ->
-          loop t fd server (Awa.Util.cs_join input_buffer buf) remaining_fulfiled_promises (List.append pending_promises [net_read fd])
+          loop t fd server (Awa.Util.cs_join input_buffer buf) remaining_fulfiled_promises (pending_promises @ [net_read fd])
         (* Here we have the Lwt_mvar.take fulfiled, we can let the timeout + net_read continue and add a new Lwt_mvar.take *)
         | Sshout (id, buf) :: remaining_fulfiled_promises
         | Ssherr (id, buf) :: remaining_fulfiled_promises ->
           wrapr (Awa.Server.output_channel_data server id buf)
           >>= fun (server, msgs) ->
           send_msgs fd server msgs >>= fun server ->
-          loop t fd server input_buffer remaining_fulfiled_promises (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+          loop t fd server input_buffer remaining_fulfiled_promises (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       in
       loop t fd server input_buffer nexus_msg_fulfiled pending_promises
     (* In all of the following we have the Lwt_mvar.take fulfiled, we can let the timeout + net_read continue
@@ -291,7 +291,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
       send_msgs fd server replies
       >>= fun server ->
       match event with
-      | None -> nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+      | None -> nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Userauth (_, (Password _ as userauth)) ->
         let (server, reply) = Result.get_ok (Awa.Server.reject_userauth server userauth) in
         send_msg fd server reply >>= fun server ->
@@ -340,7 +340,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
          | Some c -> sshin_data c data
          | None -> Lwt.return_unit)
         >>= fun () ->
-        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Channel_subsystem (id, cmd) (* same as exec *)
       | Some Awa.Server.Channel_exec (id, cmd) ->
         (* Create an input box *)
@@ -354,7 +354,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
-        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
       | Some (Awa.Server.Start_shell id) ->
         let sshin_mbox = Lwt_mvar.create_empty () in
         (* Create a callback for each mbox *)
@@ -366,7 +366,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= None; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
-        nexus t fd server authenticated_as input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
+        nexus t fd server authenticated_as input_buffer (pending_promises @ [ Lwt_mvar.take t.nexus_mbox ])
 
   let spawn_server ?stop server msgs fd exec_callback =
     let t = { exec_callback;
