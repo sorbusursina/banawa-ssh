@@ -315,7 +315,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
                Awa.Server.reject_userauth server userauth)
         in
         send_msg fd server reply >>= fun server ->
-        nexus t fd server authenticated_as input_buffer pending_promises
+        nexus t fd server (Some user) input_buffer pending_promises
       | Some Awa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
         let username = Option.get authenticated_as in
         t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
