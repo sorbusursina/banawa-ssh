@@ -24,7 +24,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
 
   type flow = {
     flow : FLOW.flow ;
-    mutable state : [ `Active of Banawa.Client.t | `Eof | `Error of error ]
+    mutable state : [ `Active of Awa.Client.t | `Eof | `Error of error ]
   }
 
   let write_flow t buf =
@@ -57,7 +57,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
       | Ok (`Data data) ->
         match t.state with
         | `Active ssh ->
-            begin match Banawa.Client.incoming ssh (now ()) data with
+            begin match Awa.Client.incoming ssh (now ()) data with
             | Error msg ->
               Log.warn (fun m -> m "error %s while processing data" msg);
               t.state <- `Error (`Msg msg);
@@ -123,7 +123,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
           match r with
           | Error e -> Lwt.return (Error e)
           | Ok ssh ->
-            match Banawa.Client.outgoing_data ssh data with
+            match Awa.Client.outgoing_data ssh data with
             | Ok (ssh', datas) ->
               t.state <- `Active ssh';
               writev_flow t datas >|= fun () ->
@@ -139,7 +139,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
 
   let client_of_flow ?authenticator ~user auth req flow =
     let open Lwt_result.Infix in
-    let client, msgs = Banawa.Client.make ?authenticator ~user auth in
+    let client, msgs = Awa.Client.make ?authenticator ~user auth in
     let t = {
       flow   = flow ;
       state  = `Active client ;
@@ -148,7 +148,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     drain_handshake t >>= fun id ->
     (* TODO that's a bit hardcoded... *)
     let ssh = match t.state with `Active t -> t | _ -> assert false in
-    (match Banawa.Client.outgoing_request ssh ~id req with
+    (match Awa.Client.outgoing_request ssh ~id req with
      | Error msg -> t.state <- `Error (`Msg msg) ; Lwt.return (Error (`Msg msg))
      | Ok (ssh', data) -> t.state <- `Active ssh' ; write_flow t data) >|= fun () ->
     t
@@ -193,7 +193,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     | Error e -> invalid_arg e
 
   let send_msg flow server msg =
-    wrapr (Banawa.Server.output_msg server msg)
+    wrapr (Awa.Server.output_msg server msg)
     >>= fun (server, msg_buf) ->
     FLOW.write flow msg_buf >>= function
       | Ok () -> Lwt.return server
@@ -231,13 +231,13 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     List.find_opt (fun c -> id = c.id) t.channels
 
   let rekey_promise server =
-    match server.Banawa.Server.key_eol with
+    match server.Awa.Server.key_eol with
     | None -> []
     | Some mtime ->
       [ T.sleep_ns (Mtime.to_uint64_ns mtime) >>= fun () -> Lwt.return Rekey ]
 
   let rec nexus t fd server input_buffer pending_promises =
-    wrapr (Banawa.Server.pop_msg2 server input_buffer)
+    wrapr (Awa.Server.pop_msg2 server input_buffer)
     >>= fun (server, msg, input_buffer) ->
     match msg with
     | None -> (* No SSH msg *)
@@ -257,7 +257,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         | [] -> nexus t fd server input_buffer pending_promises
         (* Here we have the timeout fulfiled, we can let the net_read + Lwt_mvar.take continue *)
         | Rekey :: remaining_fulfiled_promises ->
-          (match Banawa.Server.maybe_rekey server (now ()) with
+          (match Awa.Server.maybe_rekey server (now ()) with
           | None -> loop t fd server input_buffer remaining_fulfiled_promises pending_promises
           | Some (server, kexinit) ->
             send_msg fd server kexinit
@@ -268,11 +268,11 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         | Net_eof :: _ -> Lwt.return t
         (* Here we have the net_read fulfiled, we can let the timeout + Lwt_mvar.take continue and add a new net_read *)
         | Net_io buf :: remaining_fulfiled_promises ->
-          loop t fd server (Banawa.Util.cs_join input_buffer buf) remaining_fulfiled_promises (List.append pending_promises [net_read fd])
+          loop t fd server (Awa.Util.cs_join input_buffer buf) remaining_fulfiled_promises (List.append pending_promises [net_read fd])
         (* Here we have the Lwt_mvar.take fulfiled, we can let the timeout + net_read continue and add a new Lwt_mvar.take *)
         | Sshout (id, buf) :: remaining_fulfiled_promises
         | Ssherr (id, buf) :: remaining_fulfiled_promises ->
-          wrapr (Banawa.Server.output_channel_data server id buf)
+          wrapr (Awa.Server.output_channel_data server id buf)
           >>= fun (server, msgs) ->
           send_msgs fd server msgs >>= fun server ->
           loop t fd server input_buffer remaining_fulfiled_promises (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
@@ -281,58 +281,58 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
     (* In all of the following we have the Lwt_mvar.take fulfiled, we can let the timeout + net_read continue
      * and add a new Lwt_mvar.take *)
     | Some msg -> (* SSH msg *)
-      wrapr (Banawa.Server.input_msg server msg (now ()))
+      wrapr (Awa.Server.input_msg server msg (now ()))
       >>= fun (server, replies, event) ->
       send_msgs fd server replies
       >>= fun server ->
       match event with
       | None -> nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
-      | Some Banawa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
-        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+      | Some Awa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
+        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
         t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
-      | Some Banawa.Server.Pty_set (width, height, max_width, max_height) ->
-        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+      | Some Awa.Server.Pty_set (width, height, max_width, max_height) ->
+        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
         t.exec_callback ~username (Pty_set { width; height; max_width; max_height }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
-      | Some Banawa.Server.Set_env (key, value) ->
-        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+      | Some Awa.Server.Set_env (key, value) ->
+        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
         t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
-      | Some Banawa.Server.Disconnected _ ->
+      | Some Awa.Server.Disconnected _ ->
         Lwt_list.iter_p sshin_eof t.channels
         >>= fun () -> Lwt.return t
-      | Some Banawa.Server.Channel_eof id ->
+      | Some Awa.Server.Channel_eof id ->
         (match lookup_channel t id with
          | Some c -> sshin_eof c >>= fun () -> Lwt.return t
          | None -> Lwt.return t)
-      | Some Banawa.Server.Channel_data (id, data) ->
+      | Some Awa.Server.Channel_data (id, data) ->
         (match lookup_channel t id with
          | Some c -> sshin_data c data
          | None -> Lwt.return_unit)
         >>= fun () ->
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
-      | Some Banawa.Server.Channel_subsystem (id, cmd) (* same as exec *)
-      | Some Banawa.Server.Channel_exec (id, cmd) ->
+      | Some Awa.Server.Channel_subsystem (id, cmd) (* same as exec *)
+      | Some Awa.Server.Channel_exec (id, cmd) ->
         (* Create an input box *)
         let sshin_mbox = Lwt_mvar.create_empty () in
         (* Create a callback for each mbox *)
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
         (* Create the execution thread *)
         let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
-      | Some (Banawa.Server.Start_shell id) ->
+      | Some (Awa.Server.Start_shell id) ->
         let sshin_mbox = Lwt_mvar.create_empty () in
         (* Create a callback for each mbox *)
         let ic () = Lwt_mvar.take sshin_mbox in
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
-        let username = Option.get (Banawa.Auth.username_of_auth_state server.Banawa.Server.auth_state) in
+        let username = Option.get (Awa.Auth.username_of_auth_state server.Awa.Server.auth_state) in
         (* Create the execution thread *)
         let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= None; id; sshin_mbox; exec_thread } in
@@ -353,7 +353,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) = 
         Lwt_list.iter_p sshin_eof t.channels) >|= fun () -> thread in
     send_msgs fd server msgs >>= fun server ->
     (* the ssh communication will start with 'net_read' and can only add a 'Lwt.take' promise when
-     * one Banawa.Server.Channel_{exec,subsystem} is received
+     * one Awa.Server.Channel_{exec,subsystem} is received
      *)
     nexus t fd server (Cstruct.create 0) ([ switched_off; net_read fd ] @ rekey_promise server)
 
