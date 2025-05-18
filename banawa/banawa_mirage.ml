@@ -238,7 +238,7 @@ module Make (F : Mirage_flow.S) = struct
                  ; oc : Cstruct.t -> unit Lwt.t
                  ; ec : Cstruct.t -> unit Lwt.t }
 
-  type exec_callback = request -> unit Lwt.t
+  type exec_callback = username:string -> request -> unit Lwt.t
 
   type t = {
     user_db : Auth.db;
@@ -344,6 +344,11 @@ module Make (F : Mirage_flow.S) = struct
       >>= fun (server, replies, event) ->
       send_msgs fd server replies
       >>= fun server ->
+      let username () =
+        match server.auth_state with
+        | Awa.Server.Preauth | Awa.Server.Inprogress _ -> assert false
+        | Awa.Server.Done authie -> authie
+      in
       match event with
       | None -> nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
       | Some Awa.Server.Userauth (user, userauth) ->
@@ -352,20 +357,23 @@ module Make (F : Mirage_flow.S) = struct
         let server, reply =
           Result.get_ok
             (if accept then
-               Awa.Server.accept_userauth server userauth
+               Awa.Server.accept_userauth server userauth user
              else
                Awa.Server.reject_userauth server userauth)
         in
         send_msg fd server reply >>= fun server ->
         nexus t fd server input_buffer pending_promises
       | Some Awa.Server.Pty (term, width, height, max_width, max_height, _modes) ->
-        t.exec_callback (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
+        let username = username () in
+        t.exec_callback ~username (Pty_req { width; height; max_width; max_height; term; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
       | Some Awa.Server.Pty_set (width, height, max_width, max_height) ->
-        t.exec_callback (Pty_set { width; height; max_width; max_height }) >>= fun () ->
+        let username = username () in
+        t.exec_callback ~username (Pty_set { width; height; max_width; max_height }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
       | Some Awa.Server.Set_env (key, value) ->
-        t.exec_callback (Set_env { key; value; }) >>= fun () ->
+        let username = username () in
+        t.exec_callback ~username (Set_env { key; value; }) >>= fun () ->
         nexus t fd server input_buffer pending_promises
       | Some Awa.Server.Disconnected _ ->
         Lwt_list.iter_p sshin_eof t.channels
@@ -389,7 +397,8 @@ module Make (F : Mirage_flow.S) = struct
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
         (* Create the execution thread *)
-        let exec_thread = t.exec_callback (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
+        let username = username () in
+        let exec_thread = t.exec_callback ~username (Channel { cmd; ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= Some cmd; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
@@ -400,7 +409,8 @@ module Make (F : Mirage_flow.S) = struct
         let oc id buf = Lwt_mvar.put t.nexus_mbox (Sshout (id, buf)) in
         let ec id buf = Lwt_mvar.put t.nexus_mbox (Ssherr (id, buf)) in
         (* Create the execution thread *)
-        let exec_thread = t.exec_callback (Shell { ic; oc= oc id; ec= ec id; }) in
+        let username = username () in
+        let exec_thread = t.exec_callback ~username (Shell { ic; oc= oc id; ec= ec id; }) in
         let c = { cmd= None; id; sshin_mbox; exec_thread } in
         let t = { t with channels = c :: t.channels } in
         nexus t fd server input_buffer (List.append pending_promises [ Lwt_mvar.take t.nexus_mbox ])
