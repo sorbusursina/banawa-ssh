@@ -1,5 +1,0 @@
-(library
- (name banawa_mirage)
- (public_name banawa-mirage)
- (wrapped false)
- (libraries banawa mirage-flow mirage-clock mirage-time duration lwt mtime logs))

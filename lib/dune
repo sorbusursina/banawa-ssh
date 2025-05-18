@@ -1,4 +1,0 @@
-(library
- (name banawa)
- (public_name banawa)
- (libraries eqaf.cstruct cstruct mirage-crypto mirage-crypto-rng mirage-crypto-pk zarith x509 mtime logs base64 mirage-crypto-ec))

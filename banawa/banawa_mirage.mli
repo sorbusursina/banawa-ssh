@@ -1,9 +1,17 @@
 (** Effectful operations using Mirage for pure SSH. *)
 
-(** SSH module given a flow *)
-module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : sig
+module Auth : sig
+  type db
 
-  module FLOW : Mirage_flow.S
+  val empty : int -> db
+  (** [empty initial_size] is a database of users with initial size [initial_size]. *)
+
+  val add_user : db -> string -> Awa.Hostkey.pub -> unit
+  (** [add_user db username key] adds a user [user] with key [key] to the user database [db]. *)
+end
+
+(** SSH module given a flow *)
+module Make (F : Mirage_flow.S) : sig
 
   (** possible errors: incoming alert, processing failure, or a
       problem in the underlying flow. *)
@@ -19,13 +27,6 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
     with type error := error
      and type write_error := write_error
 
-  (** [client_of_flow ~authenticator ~user key channel_request flow] upgrades the
-      existing connection to SSH, mutually authenticates, opens a channel and
-      sends the channel request. *)
-  val client_of_flow : ?authenticator:Banawa.Keys.authenticator -> user:string ->
-    [ `Pubkey of Banawa.Hostkey.priv | `Password of string ] ->
-    Banawa.Ssh.channel_request -> FLOW.flow -> (flow, error) result Lwt.t
-
   type t
 
   type request =
@@ -40,15 +41,15 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
                  ; oc : Cstruct.t -> unit Lwt.t
                  ; ec : Cstruct.t -> unit Lwt.t }
 
-  type exec_callback = username:string -> request -> unit Lwt.t
+  type exec_callback = request -> unit Lwt.t
 
-  val spawn_server : ?stop:Lwt_switch.t -> Banawa.Server.t -> Banawa.Ssh.message list -> F.flow ->
+  val spawn_server : ?stop:Lwt_switch.t -> Awa.Server.t -> Auth.db -> Awa.Ssh.message list -> F.flow ->
     exec_callback -> t Lwt.t
   (** [spawn_server ?stop server msgs flow callback] launches an {i internal}
       SSH channels handler which can be stopped by [stop]. This SSH channels
       handler will call [callback] for every new channels requested by the
-      client. [msgs] are the SSH {i hello} given by {!val:Banawa.Server.make} which
-      returns also a {!type:Banawa.Server.t} required here.
+      client. [msgs] are the SSH {i hello} given by {!val:Awa.Server.make} which
+      returns also a {!type:Awa.Server.t} required here.
 
       A basic usage of [spawn_server] is:
       {[
@@ -56,7 +57,7 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
           Lwt.return_unit
 
         let tcp_handler flow =
-          let server, msgs = Banawa.Server.make private_key db in
+          let server, msgs = Awa.Server.make private_key db in
           SSH.spawn_server server msgs flow ssh_handler >>= fun _t ->
           close flow
       ]}
@@ -64,4 +65,4 @@ module Make (F : Mirage_flow.S) (T : Mirage_time.S) (M : Mirage_clock.MCLOCK) : 
       {b NOTE}: Even if the [ssh_channel_handler] is fulfilled, [spawn_server]
       continues to handle SSH channels. Only [stop] can really stop the internal
       SSH channels handler. *)
-end with module FLOW = F
+end
